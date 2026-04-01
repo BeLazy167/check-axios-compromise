@@ -5,13 +5,13 @@ Detect the malicious axios supply chain attack (versions `1.14.1` / `0.30.4`) th
 ## Usage
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/belazy/check-axios-compromise/main/check-axios-compromise.sh | bash
+curl -fsSL https://raw.githubusercontent.com/BeLazy167/check-axios-compromise/main/check-axios-compromise.sh | bash
 ```
 
 Or clone and run:
 
 ```bash
-git clone https://github.com/belazy/check-axios-compromise.git
+git clone https://github.com/BeLazy167/check-axios-compromise.git
 cd check-axios-compromise
 ./check-axios-compromise.sh
 ```
