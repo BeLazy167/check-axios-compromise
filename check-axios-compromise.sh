@@ -3,7 +3,7 @@
 # Detects malicious axios supply chain attack (versions 1.14.1 / 0.30.4)
 # Works on macOS, Linux, and Windows (Git Bash / WSL)
 
-set -euo pipefail
+set -uo pipefail
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -13,6 +13,8 @@ NC='\033[0m'
 
 compromised=0
 warnings=0
+
+MALICIOUS_VER='1\.14\.1([^0-9]|$)|0\.30\.4([^0-9]|$)'
 
 banner() { printf "\n${BOLD}── %s ──${NC}\n" "$1"; }
 ok()     { printf "  ${GREEN}✓${NC} %s\n" "$1"; }
@@ -27,11 +29,14 @@ banner "RAT Artifacts"
 
 case "$(uname -s)" in
   Darwin*)
-    if [ -e "/Library/Caches/com.apple.act.mond" ]; then
-      fail "macOS RAT found: /Library/Caches/com.apple.act.mond"
-    else
-      ok "No macOS RAT artifact"
-    fi
+    found_rat=0
+    for rat_path in "/Library/Caches/com.apple.act.mond" "$HOME/Library/Caches/com.apple.act.mond"; do
+      if [ -e "$rat_path" ]; then
+        fail "macOS RAT found: $rat_path"
+        found_rat=1
+      fi
+    done
+    [ "$found_rat" -eq 0 ] && ok "No macOS RAT artifact"
     ;;
   Linux*)
     if [ -e "/tmp/ld.py" ]; then
@@ -55,19 +60,25 @@ esac
 # ── Step 2: Current project ──
 banner "Current Project ($(pwd))"
 
+found_lockfile=0
+
 if [ -f "package-lock.json" ]; then
+  found_lockfile=1
   if grep -qE '"axios"' package-lock.json 2>/dev/null; then
-    if grep -A1 '"axios"' package-lock.json | grep -qE '1\.14\.1|0\.30\.4'; then
+    if grep -A5 '"axios"' package-lock.json | grep -qE "$MALICIOUS_VER"; then
       fail "Malicious axios version in package-lock.json"
     else
-      ok "axios in lockfile — safe version"
+      ok "axios in package-lock.json — safe version"
     fi
   else
     ok "No axios in package-lock.json"
   fi
-elif [ -f "yarn.lock" ]; then
+fi
+
+if [ -f "yarn.lock" ]; then
+  found_lockfile=1
   if grep -qE 'axios@' yarn.lock 2>/dev/null; then
-    if grep -A1 'axios@' yarn.lock | grep -qE '1\.14\.1|0\.30\.4'; then
+    if grep -A5 'axios@' yarn.lock | grep -qE "$MALICIOUS_VER"; then
       fail "Malicious axios version in yarn.lock"
     else
       ok "axios in yarn.lock — safe version"
@@ -75,9 +86,12 @@ elif [ -f "yarn.lock" ]; then
   else
     ok "No axios in yarn.lock"
   fi
-elif [ -f "pnpm-lock.yaml" ]; then
+fi
+
+if [ -f "pnpm-lock.yaml" ]; then
+  found_lockfile=1
   if grep -qE 'axios' pnpm-lock.yaml 2>/dev/null; then
-    if grep -E 'axios' pnpm-lock.yaml | grep -qE '1\.14\.1|0\.30\.4'; then
+    if grep -A5 'axios' pnpm-lock.yaml | grep -qE "$MALICIOUS_VER"; then
       fail "Malicious axios version in pnpm-lock.yaml"
     else
       ok "axios in pnpm-lock.yaml — safe version"
@@ -85,8 +99,10 @@ elif [ -f "pnpm-lock.yaml" ]; then
   else
     ok "No axios in pnpm-lock.yaml"
   fi
-else
-  ok "No lockfile in current directory"
+fi
+
+if [ "$found_lockfile" -eq 0 ]; then
+  warn "No lockfile in current directory — cd to your project root"
 fi
 
 if [ -d "node_modules/plain-crypto-js" ]; then
@@ -111,36 +127,23 @@ if [ ${#search_dirs[@]} -eq 0 ]; then
 else
   lockfiles_checked=0
   for dir in "${search_dirs[@]}"; do
-    while IFS= read -r lockfile; do
-      lockfiles_checked=$((lockfiles_checked + 1))
-      project_dir="$(dirname "$lockfile")"
+    # Check all lockfile types
+    for lockfile_name in "package-lock.json" "yarn.lock" "pnpm-lock.yaml"; do
+      while IFS= read -r lockfile; do
+        lockfiles_checked=$((lockfiles_checked + 1))
+        project_dir="$(dirname "$lockfile")"
 
-      # Check lockfile for malicious versions
-      if grep -A1 '"axios"' "$lockfile" 2>/dev/null | grep -qE '1\.14\.1|0\.30\.4'; then
-        fail "Malicious axios in $lockfile"
-      fi
+        # Check lockfile for malicious versions
+        if grep -A5 -Ei 'axios' "$lockfile" 2>/dev/null | grep -qE "$MALICIOUS_VER"; then
+          fail "Malicious axios in $lockfile"
+        fi
 
-      # Check for dropper
-      if [ -d "$project_dir/node_modules/plain-crypto-js" ]; then
-        fail "Dropper found in $project_dir/node_modules/plain-crypto-js"
-      fi
-    done < <(find "$dir" -maxdepth 5 -name "package-lock.json" -not -path "*/node_modules/*" 2>/dev/null)
-
-    # Also check yarn.lock
-    while IFS= read -r lockfile; do
-      lockfiles_checked=$((lockfiles_checked + 1))
-      if grep -A1 'axios@' "$lockfile" 2>/dev/null | grep -qE '1\.14\.1|0\.30\.4'; then
-        fail "Malicious axios in $lockfile"
-      fi
-    done < <(find "$dir" -maxdepth 5 -name "yarn.lock" -not -path "*/node_modules/*" 2>/dev/null)
-
-    # Also check pnpm-lock.yaml
-    while IFS= read -r lockfile; do
-      lockfiles_checked=$((lockfiles_checked + 1))
-      if grep -E 'axios' "$lockfile" 2>/dev/null | grep -qE '1\.14\.1|0\.30\.4'; then
-        fail "Malicious axios in $lockfile"
-      fi
-    done < <(find "$dir" -maxdepth 5 -name "pnpm-lock.yaml" -not -path "*/node_modules/*" 2>/dev/null)
+        # Check for dropper
+        if [ -d "$project_dir/node_modules/plain-crypto-js" ]; then
+          fail "Dropper found in $project_dir/node_modules/plain-crypto-js"
+        fi
+      done < <(find "$dir" -maxdepth 5 -name "$lockfile_name" -not -path "*/node_modules/*" 2>/dev/null || true)
+    done
   done
 
   if [ "$lockfiles_checked" -eq 0 ]; then
@@ -153,15 +156,20 @@ fi
 # ── Step 4: Global npm cache ──
 banner "Global npm Cache"
 
-npm_cache="$(npm config get cache 2>/dev/null || echo "")"
-if [ -n "$npm_cache" ] && [ -d "$npm_cache" ]; then
-  if find "$npm_cache" -path "*/axios/-/axios-1.14.1.tgz" -o -path "*/axios/-/axios-0.30.4.tgz" 2>/dev/null | grep -q .; then
-    warn "Malicious axios tarball in npm cache — run: npm cache clean --force"
-  else
-    ok "No malicious axios in npm cache"
-  fi
+if ! command -v npm &>/dev/null; then
+  ok "npm not installed — skipping cache check"
 else
-  ok "npm cache not found or npm not installed"
+  npm_cache="$(npm config get cache 2>/dev/null || echo "")"
+  if [ -n "$npm_cache" ] && [ -d "$npm_cache" ]; then
+    malicious_tarballs="$(find "$npm_cache" \( -path "*/axios/-/axios-1.14.1.tgz" -o -path "*/axios/-/axios-0.30.4.tgz" \) 2>/dev/null || true)"
+    if [ -n "$malicious_tarballs" ]; then
+      warn "Malicious axios tarball in npm cache — run: npm cache clean --force"
+    else
+      ok "No malicious axios in npm cache"
+    fi
+  else
+    warn "npm installed but cache location not found"
+  fi
 fi
 
 # ── Results ──
