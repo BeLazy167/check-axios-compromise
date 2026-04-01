@@ -20,11 +20,13 @@ cd check-axios-compromise
 
 | # | Check | Details |
 |---|-------|---------|
-| 1 | **RAT artifacts** | OS-specific payloads (macOS, Linux, Windows) |
-| 2 | **Lockfiles** | `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml` for axios `1.14.1` / `0.30.4` |
-| 3 | **Dropper package** | `node_modules/plain-crypto-js` directory |
-| 4 | **Project scan** | Recursively scans common project directories |
+| 1 | **RAT artifacts** | OS-specific payloads — macOS (system + user Library), Linux, Windows |
+| 2 | **Lockfiles** | All lockfile types (`package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`) checked independently |
+| 3 | **Dropper package** | `node_modules/plain-crypto-js` in current project and all scanned projects |
+| 4 | **Project scan** | Recursively scans common project directories (depth 5) for all lockfile types |
 | 5 | **npm cache** | Cached malicious tarballs |
+
+Version matching uses anchored regex to avoid false positives (e.g. `1.14.10` won't match `1.14.1`).
 
 ## Platform support
 
