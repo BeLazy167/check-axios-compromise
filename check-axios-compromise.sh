@@ -30,7 +30,7 @@ banner "RAT Artifacts"
 case "$(uname -s)" in
   Darwin*)
     found_rat=0
-    for rat_path in "/Library/Caches/com.apple.act.mond" "$HOME/Library/Caches/com.apple.act.mond"; do
+    for rat_path in "/Library/Caches/com.apple.act.mond" "$HOME/Library/Caches/com.apple.act.mond" "/tmp/6202033"; do
       if [ -e "$rat_path" ]; then
         fail "macOS RAT found: $rat_path"
         found_rat=1
@@ -46,16 +46,47 @@ case "$(uname -s)" in
     fi
     ;;
   MINGW*|MSYS*|CYGWIN*)
-    if [ -e "${PROGRAMDATA:-C:\\ProgramData}/wt.exe" ]; then
-      fail "Windows RAT found: %PROGRAMDATA%\\wt.exe"
-    else
-      ok "No Windows RAT artifact"
-    fi
+    found_rat=0
+    for rat_path in "${PROGRAMDATA:-C:\\ProgramData}/wt.exe" "${TEMP:-/tmp}/6202033.ps1" "${TEMP:-/tmp}/6202033.vbs"; do
+      if [ -e "$rat_path" ]; then
+        fail "Windows RAT found: $rat_path"
+        found_rat=1
+      fi
+    done
+    [ "$found_rat" -eq 0 ] && ok "No Windows RAT artifact"
     ;;
   *)
     warn "Unknown OS — check manually for RAT artifacts"
     ;;
 esac
+
+# ── Step 1b: Network IOCs ──
+banner "Network IOCs"
+
+c2_domain="sfrclak.com"
+c2_ip="142.11.206.73"
+
+# Check DNS cache / hosts file for C2 domain
+if grep -qr "$c2_domain" /etc/hosts 2>/dev/null; then
+  fail "C2 domain $c2_domain found in /etc/hosts"
+fi
+
+# Check active connections to C2
+if command -v ss &>/dev/null; then
+  if ss -tnp 2>/dev/null | grep -qE "$c2_ip|$c2_domain"; then
+    fail "Active connection to C2 ($c2_ip / $c2_domain)"
+  else
+    ok "No active connections to C2"
+  fi
+elif command -v netstat &>/dev/null; then
+  if netstat -an 2>/dev/null | grep -q "$c2_ip"; then
+    fail "Active connection to C2 ($c2_ip)"
+  else
+    ok "No active connections to C2"
+  fi
+else
+  warn "Neither ss nor netstat available — check network connections manually"
+fi
 
 # ── Step 2: Current project ──
 banner "Current Project ($(pwd))"
